@@ -4,7 +4,7 @@ from time import sleep
 
 def main():
     wd = Selenium()
-    wd.set_screenshot_directory('output')
+    wd.set_screenshot_directory('output_test')
     wd.open_available_browser(url='https://google.com', headless=False)
     sleep(2)
     wd.capture_page_screenshot()
