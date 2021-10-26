@@ -1,15 +1,14 @@
-from RPA.Excel.Files import Files
-from RPA.FileSystem import FileSystem
+from RPA.Browser.Selenium import Selenium
+from time import sleep
 
 
 def main():
-    lib = Files()
-    lib_2 = FileSystem()
-    dir_path = 'output'
-    lib_2.create_directory(dir_path)
-    lib.create_workbook(dir_path, 'xlsx')
-    lib.rename_worksheet('Sheet', 'Renamed sheet')
-    lib.save_workbook(f'{dir_path}/test.xlsx')
+    wd = Selenium()
+    wd.set_screenshot_directory('output')
+    wd.open_available_browser(url='https://google.com', headless=False)
+    sleep(2)
+    wd.capture_page_screenshot()
+    wd.close_browser()
     return
 
 
