@@ -4,6 +4,7 @@ from RPA.Browser.Selenium import Selenium
 from RPA.HTTP import HTTP
 from RPA.Excel.Files import Files
 from RPA.PDF import PDF
+from RPA.Robocorp.Vault import Vault
 
 
 class InsertDataAndExportPdf(object):
@@ -14,6 +15,9 @@ class InsertDataAndExportPdf(object):
         self.excel = Files()
         self.pdf = PDF()
         self.output_dir = Path(Path.cwd(), 'output')
+        secrets = Vault().get_secret('credentials')
+        self.username = secrets['username']
+        self.password = secrets['password']
 
     def run_task(self):
         try:
@@ -32,8 +36,8 @@ class InsertDataAndExportPdf(object):
         return
 
     def log_in(self):
-        self.wd.input_text('username', 'maria')
-        self.wd.input_text('password', 'thoushallnotpass')
+        self.wd.input_text('username', self.username)
+        self.wd.input_text('password', self.password)
         self.wd.submit_form()
         return
 
