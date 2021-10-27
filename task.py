@@ -1,8 +1,5 @@
-import logging
-
-
 def test_task():
-    logging.info('Hello world!')
+    print('Hello world!')
     return
 
 

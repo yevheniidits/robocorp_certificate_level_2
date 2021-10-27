@@ -8,7 +8,7 @@ dependencies:
   # https://anaconda.org/search
   - python=3.8.10
 
-  - pip=21.3.1
+#   - pip=21.3.1
 #   - pip:
     # Define pip packages here.
     # https://pypi.org/
