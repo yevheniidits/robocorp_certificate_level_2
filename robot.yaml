@@ -1,5 +1,5 @@
 tasks:
-  Test Python Task:
+  entrypoint:
     shell: python task.py
 
 condaConfigFile: conda.yaml
