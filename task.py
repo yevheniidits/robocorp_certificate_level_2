@@ -1,125 +1,121 @@
+"""
+OrderRobot for RobotSpareBin Industries Inc.
+    Saves the order HTML receipt as a PDF file.
+    Saves the screenshot of the ordered robot.
+    Embeds the screenshot of the robot to the PDF receipt.
+    Creates ZIP archive of the receipts and the images.
+"""
+from pathlib import Path
+
 from RPA.Browser.Selenium import Selenium
-from RPA.Excel.Files import XlsxWorkbook
+from RPA.HTTP import HTTP
+from RPA.Tables import Tables
 from RPA.PDF import PDF
-import os
-import time
-import re
+from RPA.FileSystem import FileSystem
+from RPA.Archive import Archive
+from RPA.Dialogs import Dialogs
 
 
-excel_book = XlsxWorkbook('output/agencies.xlsx')
-excel_book.create()
+class OrderRobot(object):
+
+    def __init__(self):
+        self.wd = Selenium()
+        self.http = HTTP()
+        self.tables = Tables()
+        self.pdf = PDF()
+        self.fs = FileSystem()
+        self.archive = Archive()
+        self.dialogs = Dialogs()
+        self.output_path = Path(Path.cwd(), 'output')
+
+    def start_robot(self):
+        self.open_robot_order_website()
+        try:
+            link_for_orders = self.get_download_link_from_user()
+            orders = self.get_orders(link_for_orders)
+            for order in orders:
+                self.close_modal_window()
+                self.fill_the_form(order)
+                self.submit_the_order()
+                pdf = self.save_order_receipt_as_pdf(order['Order number'])
+                screenshot = self.save_robot_screenshot_to_pdf()
+                self.create_receipt_pdf(pdf, screenshot)
+                self.wd.click_button('order-another')
+            self.create_archive()
+            self.remove_temp_files()
+        finally:
+            self.wd.close_browser()
+        return
+
+    def open_robot_order_website(self):
+        self.wd.open_available_browser('https://robotsparebinindustries.com/#/robot-order', headless=True)
+        self.wd.wait_until_location_is('https://robotsparebinindustries.com/#/robot-order')
+        return
+
+    def close_modal_window(self):
+        self.wd.wait_until_page_contains_element('css:div.modal')
+        if self.wd.does_page_contain_element('css:.btn-danger'):
+            self.wd.click_button_when_visible('css:.btn-danger')
+        return
+
+    def get_download_link_from_user(self):
+        self.dialogs.add_text_input(
+            name='csv_src',
+            label='Source for .csv file download',
+            placeholder='https://robotsparebinindustries.com/orders.csv'
+        )
+        self.dialogs.add_text('Use https://robotsparebinindustries.com/orders.csv but it`s a secret')
+        submitted_result = self.dialogs.run_dialog()
+        link = submitted_result['csv_src']
+        return link
+
+    def get_orders(self, link: str):
+        self.http.download(url=link, overwrite=True)
+        orders = self.tables.read_table_from_csv('orders.csv', header=True)
+        return orders
+
+    def fill_the_form(self, order: dict):
+        self.wd.select_from_list_by_value('head', order['Head'])
+        self.wd.select_radio_button('body', order['Body'])
+        self.wd.input_text('css:input[type="number"]', order['Legs'])
+        self.wd.input_text('address', order['Address'])
+        self.wd.click_button('preview')
+        return
+
+    def submit_the_order(self):
+        self.wd.click_button('order')
+        while self.wd.does_page_contain_element('css:div.alert-danger'):
+            self.wd.click_button('order')
+        return
+
+    def save_order_receipt_as_pdf(self, order_number: str):
+        receipt_html = self.wd.get_element_attribute('receipt', 'outerHTML')
+        pdf_file_path = str(Path(self.output_path, 'receipts', f'{order_number}.pdf'))
+        self.pdf.html_to_pdf(receipt_html, pdf_file_path)
+        return pdf_file_path
+
+    def save_robot_screenshot_to_pdf(self):
+        screenshot_path = str(Path(self.output_path, 'tmp', 'robot_screenshot.png'))
+        self.wd.screenshot('robot-preview-image', screenshot_path)
+        return screenshot_path
+
+    def create_receipt_pdf(self, pdf: str, screenshot: str):
+        self.pdf.add_files_to_pdf([screenshot], pdf, append=True)
+        return
+
+    def create_archive(self):
+        receipts_path = str(Path(self.output_path, 'receipts'))
+        self.archive.archive_folder_with_zip(receipts_path, str(Path(self.output_path, 'receipts.zip')))
+        return
+
+    def remove_temp_files(self):
+        receipts_path = str(Path(self.output_path, 'receipts'))
+        tmp_path = str(Path(self.output_path, 'tmp'))
+        self.fs.remove_directory(receipts_path, recursive=True)
+        self.fs.remove_directory(tmp_path, recursive=True)
+        return
 
 
-class PDFLib(object):
-
-    def __init__(self, pdf_obj):
-        self.pdf = pdf_obj
-
-    def pdf_data(self, name: str) -> list:
-        text_pdf = self.pdf.get_text_from_pdf('output/' + name)
-        text = text_pdf[1].replace('\n', ' ')
-        name_inv_re = re.search(r'Name of this Investment: (.*)2\. Unique', text)
-        name_inv = name_inv_re.group(1) if name_inv_re else ''
-        uii_re = re.search(r'Unique Investment Identifier \(UII\): (.*)Section B', text)
-        uii = uii_re.group(1) if uii_re else ''
-        return [uii, name_inv]
-
-
-class Driver(object):
-
-    def __init__(self, browser):
-        self.browser = browser
-
-    def wait_elements(self, css_selector: str, timeout: int = 10):
-        """Wait and find elements with css selector.
-        Wait timeout(def 10s)"""
-        self.browser.wait_until_element_is_visible(f'css:{css_selector}', timeout)
-        return self.browser.find_elements(f'css:{css_selector}')
-
-    def parse_info(self):
-        self.wait_elements('.dataTables_scrollHeadInner th')
-
-        self.browser.select_from_list_by_value('css:select[name=investments-table-object_length]', '-1')
-        self.browser.wait_until_element_is_enabled('css:.paginate_button.next.disabled', 20)
-        all_records = self.wait_elements('#investments-table-object tbody tr', 60)
-
-        details_investments = []
-        excel_book.create_worksheet('investments')
-        for tmp_record in all_records:
-            _record = tmp_record.find_elements_by_css_selector('td')
-            record = [i.text for i in _record]
-            details_investments.append(record)
-        excel_book.append_worksheet('investments', details_investments)
-
-        selector_links = self.browser.find_elements('css:#investments-table-object td a')
-        all_links = [i.get_attribute('href') for i in selector_links]
-        for link in all_links:
-            self.browser.go_to(link)
-            self.browser.wait_until_element_is_visible(f'css:#business-case-pdf a', 30)
-            self.browser.click_element('css:#business-case-pdf a')
-            self.browser.wait_until_element_is_not_visible('css:#business-case-pdf span', 60)
-            time.sleep(1)
-
-
-def main():
-    name_agencies = 'National Aeronautics and Space Administration'
-    browser = Selenium()
-    browser.set_download_directory(rf"{os.getcwd()}/output")
-    web_driver = Driver(browser)
-    try:
-        browser.open_available_browser("http://itdashboard.gov/")
-        browser.click_element(f'css:.tuck-7 .trend_sans_oneregular.btn-default.btn-lg-2x')
-        agency_elements = web_driver.wait_elements('#agency-tiles-widget .tuck-5')
-        excel_book.rename_worksheet('agencies')
-
-        all_agencies = []
-        for agency in agency_elements:
-            agency_title = agency.find_element_by_css_selector('.h4.w200').text
-            agency_amount = agency.find_element_by_css_selector('.h1.w900').text
-            all_agencies.append([agency_title, agency_amount])
-
-        excel_book.append_worksheet('agencies', all_agencies)
-
-        for agency in agency_elements:
-            title = agency.find_element_by_css_selector('.h4.w200').text
-            if title == name_agencies:
-                agency.find_element_by_css_selector('.col-sm-12 a').click()
-                web_driver.parse_info()
-                break
-
-        excel_book.save()
-
-        # compare pdf and excel files
-        pdf = PDF()
-        pdf_lib = PDFLib(pdf)
-        all_investments = {}
-        investments_data = excel_book.read_worksheet('investments')
-        for investment in investments_data:
-            if investment.get('A'):
-                all_investments[investment['A']] = investment.get('C')
-
-        all_pdf_files = []
-
-        for f in os.listdir('output'):
-            name, ext = os.path.splitext(f)
-            if ext == '.pdf':
-                all_pdf_files.append(f)
-
-        for pdf in all_pdf_files:
-            data = pdf_lib.pdf_data(pdf)
-            if data[0] and data[1] == all_investments.get(data[0]):
-                print(f'is true:\n{data[0]} - {data[1]}')
-            else:
-                print(
-                    f"Does not match"
-                    f"PDF:\nUII: {data[0]}\nInvestments name:{data[1]}\n\n"
-                    f"Excel:\nInvestments name: {all_investments.get(data[0])}"
-                )
-
-    finally:
-        browser.close_all_browsers()
-        excel_book.close()
-
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    robot = OrderRobot()
+    robot.start_robot()
