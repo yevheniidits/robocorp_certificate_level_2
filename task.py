@@ -64,7 +64,7 @@ class Driver(object):
 def main():
     name_agencies = 'Department of Education'
     browser = Selenium()
-    browser.set_download_directory(rf"{os.getcwd()}\\output")
+    browser.set_download_directory(rf"{os.getcwd()}/output")
     web_driver = Driver(browser)
     try:
         browser.open_available_browser("http://itdashboard.gov/")
