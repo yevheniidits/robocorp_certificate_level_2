@@ -14,6 +14,7 @@ from RPA.PDF import PDF
 from RPA.FileSystem import FileSystem
 from RPA.Archive import Archive
 from RPA.Dialogs import Dialogs
+from RPA.Robocorp.Vault import Vault
 
 
 class OrderRobot(object):
@@ -26,6 +27,8 @@ class OrderRobot(object):
         self.fs = FileSystem()
         self.archive = Archive()
         self.dialogs = Dialogs()
+        self._secrets = Vault().get_secret('credentials')
+        self.url = self._secrets['website']
         self.output_path = Path(Path.cwd(), 'output')
 
     def start_robot(self):
@@ -48,8 +51,8 @@ class OrderRobot(object):
         return
 
     def open_robot_order_website(self):
-        self.wd.open_available_browser('https://robotsparebinindustries.com/#/robot-order', headless=True)
-        self.wd.wait_until_location_is('https://robotsparebinindustries.com/#/robot-order')
+        self.wd.open_available_browser(self.url, headless=True)
+        self.wd.wait_until_location_is(self.url)
         return
 
     def close_modal_window(self):
